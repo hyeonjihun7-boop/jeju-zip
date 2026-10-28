@@ -3,7 +3,7 @@
 // 환경변수 GEMINI_API_KEY 가 필요합니다. (코드에 키를 직접 쓰지 않습니다)
 const { toolDefinitions, toolHandlers, spotCoords } = require("./tools");
 
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-3.1-flash-lite";
 const MAX_STEPS = 6;
 
 const SYSTEM = `너는 제주 여행 추천 도우미다.
@@ -48,7 +48,7 @@ async function callGemini(contents) {
         tools: [{ functionDeclarations }],
         contents,
       }),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(20000),
     }
   );
   if (!r.ok) throw new Error(`Gemini API 오류 (${r.status})`);
@@ -130,6 +130,7 @@ module.exports = async (req, res) => {
       spots,
     });
   } catch (e) {
+    console.error(e);
     return res.status(502).json({ error: "추천을 만들지 못했어요. 잠시 후 다시 시도해 주세요." });
   }
 };

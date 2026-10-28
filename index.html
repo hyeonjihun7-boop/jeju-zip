@@ -16,6 +16,10 @@
         .me { align-self: flex-end; background: #0369a1; color: #fff; border-bottom-right-radius: 4px; }
         .bot { align-self: flex-start; background: #fff; border: 1px solid #bae6fd; border-bottom-left-radius: 4px; }
         .step { align-self: flex-start; font-size: 12px; color: #475569; background: #e0f2fe; border-radius: 999px; padding: 3px 10px; }
+        .cards { display: flex; flex-direction: column; gap: 8px; }
+        .card { display: flex; gap: 10px; align-items: center; background: #fff; border: 1px solid #bae6fd; border-radius: 12px; padding: 8px; font-size: 14px; }
+        .card img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; flex: none; }
+        img.pop { width: 100%; max-height: 120px; object-fit: cover; border-radius: 6px; margin-bottom: 4px; }
         #examples { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 8px; }
         #examples button { font-size: 12px; background: #fff; border: 1px solid #7dd3fc; color: #0369a1; border-radius: 999px; padding: 4px 10px; cursor: pointer; }
         form { display: flex; gap: 8px; padding: 10px 14px; }
@@ -66,16 +70,53 @@
             return d
         }
 
+        // 장소 이름으로 위키백과 대표 이미지를 찾는다 (키 불필요)
+        const thumbs = {}
+        function thumb(name) {
+            thumbs[name] = thumbs[name] || fetch('https://ko.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(name))
+                .then((r) => r.ok ? r.json() : null)
+                .then((d) => d && d.thumbnail ? d.thumbnail.source : null)
+                .catch(() => null)
+            return thumbs[name]
+        }
+
         function showSpots(spots) {
             markers.clearLayers()
             const pts = []
+            const cards = document.createElement('div')
+            cards.className = 'cards'
+            chat.appendChild(cards)
             for (const s of spots) {
-                if (s.lat === undefined) continue
-                const box = document.createElement('div')
-                box.textContent = s.name + ' (' + (s.indoor ? '실내' : '야외') + ') - ' + s.desc
-                L.marker([s.lat, s.lon]).bindPopup(box).addTo(markers)
-                pts.push([s.lat, s.lon])
+                const label = s.name + ' (' + (s.indoor ? '실내' : '야외') + ')'
+                const popup = document.createElement('div')
+                const text = document.createElement('div')
+                text.textContent = label + ' - ' + s.desc
+                popup.appendChild(text)
+
+                const card = document.createElement('div')
+                card.className = 'card'
+                const info = document.createElement('div')
+                info.textContent = label + ' - ' + s.desc
+                card.appendChild(info)
+                cards.appendChild(card)
+
+                thumb(s.name).then((src) => {
+                    if (!src) return
+                    const a = document.createElement('img')
+                    a.src = src
+                    a.alt = s.name
+                    card.prepend(a)
+                    const b = a.cloneNode()
+                    b.className = 'pop'
+                    popup.prepend(b)
+                })
+
+                if (s.lat !== undefined) {
+                    L.marker([s.lat, s.lon]).bindPopup(popup, { minWidth: 160 }).addTo(markers)
+                    pts.push([s.lat, s.lon])
+                }
             }
+            chat.scrollTop = chat.scrollHeight
             if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 12 })
         }
 
