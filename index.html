@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>제주 관광지 지도</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 16px; }
+        form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        #map { height: 60vh; min-height: 320px; border-radius: 8px; }
+        #list li { margin: 4px 0; }
+        #msg { color: #c00; }
+    </style>
+</head>
+<body>
+    <h1>제주 관광지 지도</h1>
+    <form id="form">
+        <select id="area">
+            <option>동쪽</option>
+            <option>서쪽</option>
+            <option>서귀포</option>
+            <option>제주시</option>
+        </select>
+        <select id="indoor">
+            <option value="">실내·야외 모두</option>
+            <option value="true">실내만</option>
+            <option value="false">야외만</option>
+        </select>
+        <button type="submit">찾기</button>
+    </form>
+    <p id="msg"></p>
+    <div id="map"></div>
+    <ul id="list"></ul>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([33.38, 126.55], 10)
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map)
+        const markers = L.layerGroup().addTo(map)
+
+        document.getElementById('form').addEventListener('submit', async (e) => {
+            e.preventDefault()
+            const msg = document.getElementById('msg')
+            const list = document.getElementById('list')
+            msg.textContent = ''
+            list.innerHTML = ''
+            markers.clearLayers()
+
+            const params = new URLSearchParams({ area: document.getElementById('area').value })
+            const indoor = document.getElementById('indoor').value
+            if (indoor) params.set('indoor', indoor)
+
+            try {
+                const res = await fetch('/api/spots?' + params)
+                const data = await res.json()
+                if (!res.ok) { msg.textContent = data.error; return }
+                if (data.count === 0) { msg.textContent = '조건에 맞는 장소가 없어요.'; return }
+
+                const points = []
+                for (const s of data.spots) {
+                    const label = s.name + ' (' + (s.indoor ? '실내' : '야외') + ')'
+                    const m = L.marker([s.lat, s.lon]).bindPopup('')
+                    m.getPopup().setContent(
+                        Object.assign(document.createElement('div'), { textContent: label + ' - ' + s.desc })
+                    )
+                    m.addTo(markers)
+                    points.push([s.lat, s.lon])
+
+                    const li = document.createElement('li')
+                    li.textContent = label + ' - ' + s.desc
+                    list.appendChild(li)
+                }
+                map.fitBounds(points, { padding: [40, 40], maxZoom: 13 })
+            } catch (err) {
+                msg.textContent = '장소를 불러오지 못했어요.'
+            }
+        })
+    </script>
+</body>
+</html>

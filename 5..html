@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <script>
+        let data ={
+            "a1":[10,20,30],
+            "a2":[11,21,31],
+            "a3":[37,38,39],
+            "a5":[317,318,319],
+            "a7":[327,328,329],
+        }
+        let v= []
+        for (let i = 0; i < 100; i++) {//, index(초기값0) 부터 ++
+            //1씩 증가시키는데 중간에 있는 조건식을 만족할떄 까지 반복한다
+            v . push(i+1)
+        }
+        const show = (id)=> console.log(id+ "를 보여줘")
+        for (const i of v) {
+            for (const element of data["a"+i]) {
+                console.log(element+"\n")
+                show(element)
+            }
+        }
+
+    </script>
+        </body>
+</html>
