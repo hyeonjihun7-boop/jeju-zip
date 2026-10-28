@@ -3,81 +3,216 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>제주 관광지 지도</title>
+    <title>지금 지구의 지진</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
     <style>
-        body { font-family: sans-serif; margin: 0; padding: 16px; }
-        form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-        #map { height: 60vh; min-height: 320px; border-radius: 8px; }
-        #list li { margin: 4px 0; }
-        #msg { color: #c00; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: sans-serif; background: #0b1020; color: #e8ecf5; }
+        header { padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+        h1 { font-size: 20px; margin: 0 8px 0 0; }
+        select, button { background: #1a2240; color: #e8ecf5; border: 1px solid #34406b; border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+        button { cursor: pointer; }
+        #stats { margin-left: auto; font-size: 14px; color: #9fb0d9; }
+        #replay { padding: 0 16px 10px; display: flex; gap: 10px; align-items: center; }
+        #slider { flex: 1; }
+        #clock { min-width: 130px; font-size: 13px; color: #9fb0d9; text-align: right; }
+        #wrap { display: flex; height: calc(100vh - 150px); min-height: 360px; }
+        #map { flex: 1; background: #0b1020; }
+        /* 지도 타일(OpenStreetMap)을 어둡게 */
+        .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.8) contrast(.9) saturate(.7); }
+        #list { width: 260px; overflow-y: auto; margin: 0; padding: 0; list-style: none; border-left: 1px solid #1f2850; }
+        #list li { padding: 8px 12px; border-bottom: 1px solid #1f2850; cursor: pointer; font-size: 13px; }
+        #list li:hover { background: #161d3a; }
+        #list b { font-size: 16px; margin-right: 6px; }
+        #msg { padding: 0 16px; color: #ff8a8a; }
+        .q { position: relative; width: 100%; height: 100%; }
+        .q b { position: absolute; inset: 0; border-radius: 50%; background: var(--c); opacity: .5; border: 1px solid var(--c); }
+        .q i { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--c); opacity: 0; }
+        .q.big i { animation: ring 2s ease-out infinite; }
+        .q.pop i { animation: ring 1.2s ease-out 1; }
+        @keyframes ring { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(3.2); opacity: 0; } }
+        @media (max-width: 700px) {
+            #wrap { flex-direction: column; height: auto; }
+            #map { height: 60vh; flex: none; }
+            #list { width: auto; max-height: 240px; border-left: 0; }
+            #stats { margin-left: 0; }
+        }
     </style>
 </head>
 <body>
-    <h1>제주 관광지 지도</h1>
-    <form id="form">
-        <select id="area">
-            <option>동쪽</option>
-            <option>서쪽</option>
-            <option>서귀포</option>
-            <option>제주시</option>
+    <header>
+        <h1>🌍 지금 지구의 지진</h1>
+        <select id="period">
+            <option value="all_hour">최근 1시간</option>
+            <option value="all_day" selected>최근 24시간</option>
+            <option value="2.5_week">최근 7일 (규모 2.5+)</option>
         </select>
-        <select id="indoor">
-            <option value="">실내·야외 모두</option>
-            <option value="true">실내만</option>
-            <option value="false">야외만</option>
+        <select id="minMag">
+            <option value="0">모든 규모</option>
+            <option value="2.5">규모 2.5+</option>
+            <option value="4.5">규모 4.5+</option>
+            <option value="6">규모 6+</option>
         </select>
-        <button type="submit">찾기</button>
-    </form>
+        <span id="stats"></span>
+    </header>
+    <div id="replay">
+        <button id="play">▶ 재생</button>
+        <button id="live">실시간</button>
+        <input id="slider" type="range" min="0" max="1000" value="1000">
+        <span id="clock"></span>
+    </div>
     <p id="msg"></p>
-    <div id="map"></div>
-    <ul id="list"></ul>
+    <div id="wrap">
+        <div id="map"></div>
+        <ul id="list"></ul>
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
     <script>
-        const map = L.map('map').setView([33.38, 126.55], 10)
+        const $ = (id) => document.getElementById(id)
+        const FEED = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/'
+
+        const map = L.map('map', { worldCopyJump: true }).setView([20, 10], 2)
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors'
+            attribution: '&copy; OpenStreetMap contributors · 데이터: USGS',
+            maxZoom: 18
         }).addTo(map)
-        const markers = L.layerGroup().addTo(map)
+        const layer = L.layerGroup().addTo(map)
 
-        document.getElementById('form').addEventListener('submit', async (e) => {
-            e.preventDefault()
-            const msg = document.getElementById('msg')
-            const list = document.getElementById('list')
-            msg.textContent = ''
-            list.innerHTML = ''
-            markers.clearLayers()
+        let quakes = []      // 시간 오름차순
+        let start = 0, end = 0
+        let cut = Infinity   // 이 시각까지 발생한 지진만 표시
+        let replaying = false
 
-            const params = new URLSearchParams({ area: document.getElementById('area').value })
-            const indoor = document.getElementById('indoor').value
-            if (indoor) params.set('indoor', indoor)
+        const color = (m) => m < 3 ? '#4cc9f0' : m < 4.5 ? '#f9c74f' : m < 6 ? '#f8961e' : '#f94144'
+        const size = (m) => Math.min(120, Math.max(8, m * m * 2.2))
+        const fmt = (t) => new Date(t).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
-            try {
-                const res = await fetch('/api/spots?' + params)
-                const data = await res.json()
-                if (!res.ok) { msg.textContent = data.error; return }
-                if (data.count === 0) { msg.textContent = '조건에 맞는 장소가 없어요.'; return }
+        function makeMarker(q) {
+            const s = size(q.mag)
+            const icon = L.divIcon({
+                className: '',
+                iconSize: [s, s],
+                iconAnchor: [s / 2, s / 2],
+                html: '<div class="q' + (q.mag >= 4.5 ? ' big' : '') + '" style="--c:' + color(q.mag) + '"><b></b><i></i></div>'
+            })
+            const m = L.marker([q.lat, q.lon], { icon })
+            const box = document.createElement('div')
+            box.textContent = 'M' + q.mag.toFixed(1) + ' · ' + q.place + ' · 깊이 ' + Math.round(q.depth) + 'km · ' + fmt(q.time)
+            m.bindPopup(box)
+            return m
+        }
 
-                const points = []
-                for (const s of data.spots) {
-                    const label = s.name + ' (' + (s.indoor ? '실내' : '야외') + ')'
-                    const m = L.marker([s.lat, s.lon]).bindPopup('')
-                    m.getPopup().setContent(
-                        Object.assign(document.createElement('div'), { textContent: label + ' - ' + s.desc })
-                    )
-                    m.addTo(markers)
-                    points.push([s.lat, s.lon])
-
-                    const li = document.createElement('li')
-                    li.textContent = label + ' - ' + s.desc
-                    list.appendChild(li)
+        function update() {
+            const min = Number($('minMag').value)
+            let shown = 0, biggest = 0
+            for (const q of quakes) {
+                const should = q.time <= cut && q.mag >= min
+                if (should) { shown++; biggest = Math.max(biggest, q.mag) }
+                if (should && !q.on) {
+                    q.marker = q.marker || makeMarker(q)
+                    q.marker.addTo(layer)
+                    q.on = true
+                    const el = q.marker.getElement()
+                    if (replaying && el) {
+                        const d = el.firstChild
+                        d.classList.add('pop')
+                        setTimeout(() => d.classList.remove('pop'), 1300)
+                    }
+                } else if (!should && q.on) {
+                    layer.removeLayer(q.marker)
+                    q.on = false
                 }
-                map.fitBounds(points, { padding: [40, 40], maxZoom: 13 })
-            } catch (err) {
-                msg.textContent = '장소를 불러오지 못했어요.'
             }
-        })
+            $('stats').textContent = shown + '건' + (shown ? ' · 최대 규모 ' + biggest.toFixed(1) : '')
+            $('clock').textContent = cut === Infinity ? '실시간 (최신)' : fmt(cut)
+            renderList(min)
+        }
+
+        function renderList(min) {
+            const list = $('list')
+            list.innerHTML = ''
+            quakes.filter((q) => q.on).sort((a, b) => b.mag - a.mag).slice(0, 30).forEach((q) => {
+                const li = document.createElement('li')
+                const b = document.createElement('b')
+                b.textContent = q.mag.toFixed(1)
+                b.style.color = color(q.mag)
+                li.append(b, q.place + ' · ' + fmt(q.time))
+                li.onclick = () => { map.flyTo([q.lat, q.lon], 6); q.marker.openPopup() }
+                list.appendChild(li)
+            })
+        }
+
+        async function load() {
+            $('msg').textContent = ''
+            stop()
+            try {
+                const res = await fetch(FEED + $('period').value + '.geojson')
+                if (!res.ok) throw new Error(res.status)
+                const data = await res.json()
+                layer.clearLayers()
+                quakes = data.features
+                    .filter((f) => f.properties.mag !== null)
+                    .map((f) => ({
+                        id: f.id,
+                        mag: f.properties.mag,
+                        place: f.properties.place || '위치 정보 없음',
+                        time: f.properties.time,
+                        lon: f.geometry.coordinates[0],
+                        lat: f.geometry.coordinates[1],
+                        depth: f.geometry.coordinates[2],
+                        on: false
+                    }))
+                    .sort((a, b) => a.time - b.time)
+                start = quakes.length ? quakes[0].time : 0
+                end = quakes.length ? quakes[quakes.length - 1].time : 0
+                cut = Infinity
+                $('slider').value = 1000
+                update()
+            } catch (e) {
+                $('msg').textContent = '지진 데이터를 불러오지 못했어요.'
+            }
+        }
+
+        // 재생: start → end 를 약 12초에 걸쳐 되감기
+        let raf = 0
+        function stop() {
+            replaying = false
+            cancelAnimationFrame(raf)
+            $('play').textContent = '▶ 재생'
+        }
+        function play() {
+            if (!quakes.length) return
+            replaying = true
+            $('play').textContent = '⏸ 멈춤'
+            let v = Number($('slider').value)
+            if (v >= 1000) v = 0
+            let last = performance.now()
+            const step = (now) => {
+                v += (now - last) / 12
+                last = now
+                $('slider').value = Math.min(v, 1000)
+                cut = start + (end - start) * Math.min(v, 1000) / 1000
+                update()
+                if (v >= 1000) { cut = Infinity; update(); stop(); return }
+                raf = requestAnimationFrame(step)
+            }
+            raf = requestAnimationFrame(step)
+        }
+
+        $('play').onclick = () => replaying ? stop() : play()
+        $('live').onclick = () => { stop(); cut = Infinity; $('slider').value = 1000; update() }
+        $('slider').oninput = () => {
+            stop()
+            const v = Number($('slider').value)
+            cut = v >= 1000 ? Infinity : start + (end - start) * v / 1000
+            update()
+        }
+        $('minMag').onchange = update
+        $('period').onchange = load
+
+        load()
+        setInterval(() => { if (!replaying && cut === Infinity) load() }, 60000)
     </script>
 </body>
 </html>
